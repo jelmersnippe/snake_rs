@@ -1,7 +1,7 @@
 use rand::RngExt;
 use std::{
     sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 
 use pixels::{Pixels, SurfaceTexture};
@@ -20,23 +20,53 @@ enum Direction {
     Left,
 }
 
+struct SnakePart {
+    pub x: i16,
+    pub y: i16,
+}
+
+struct Snake {
+    pub parts: Vec<SnakePart>,
+    pub direction: Direction,
+}
+
+impl Snake {
+    pub fn new() -> Self {
+        Self {
+            direction: Direction::Up,
+            parts: vec![
+                SnakePart { x: 200, y: 200 },
+                SnakePart { x: 200, y: 220 },
+                SnakePart { x: 200, y: 240 },
+            ],
+        }
+    }
+}
+
 struct GameState {
-    snake_direction: Direction,
-    snake_pos_x: i16,
-    snake_pos_y: i16,
-    snake_length: i16,
+    snake: Snake,
     apple_pos_x: i16,
     apple_pos_y: i16,
+}
+
+impl GameState {
+    pub fn move_apple(&mut self) {
+        let mut rng = rand::rng();
+
+        self.apple_pos_x = rng.random_range(0..20) * BLOCK_SIZE;
+        self.apple_pos_y = rng.random_range(0..20) * BLOCK_SIZE;
+
+        if is_in_snake(self.apple_pos_x, self.apple_pos_y, &self.snake) {
+            self.move_apple();
+        }
+    }
 }
 
 impl Default for GameState {
     fn default() -> Self {
         let mut rng = rand::rng();
         Self {
-            snake_direction: Direction::Up,
-            snake_pos_x: 200,
-            snake_pos_y: 200,
-            snake_length: 3,
+            snake: Snake::new(),
             apple_pos_x: rng.random_range(0..20) * BLOCK_SIZE,
             apple_pos_y: rng.random_range(0..20) * BLOCK_SIZE,
         }
@@ -65,14 +95,42 @@ impl Default for App {
 
 impl App {
     fn update(&mut self) {
-        let (snake_x, snake_y) = match self.state.snake_direction {
+        let (velocity_x, velocity_y) = match self.state.snake.direction {
             Direction::Up => (0, -BLOCK_SIZE),
             Direction::Down => (0, BLOCK_SIZE),
             Direction::Right => (BLOCK_SIZE, 0),
             Direction::Left => (-BLOCK_SIZE, 0),
         };
-        self.state.snake_pos_x += snake_x;
-        self.state.snake_pos_y += snake_y;
+
+        let mut prev_x = self.state.snake.parts[0].x;
+        let mut prev_y = self.state.snake.parts[0].y;
+
+        self.state.snake.parts[0].x += velocity_x;
+        self.state.snake.parts[0].y += velocity_y;
+
+        for i in 1..self.state.snake.parts.len() {
+            let x = self.state.snake.parts[i].x;
+            let y = self.state.snake.parts[i].y;
+
+            self.state.snake.parts[i].x = prev_x;
+            self.state.snake.parts[i].y = prev_y;
+
+            prev_x = x;
+            prev_y = y;
+        }
+
+        if is_in_snake(
+            self.state.apple_pos_x,
+            self.state.apple_pos_y,
+            &self.state.snake,
+        ) {
+            self.state.snake.parts.push(SnakePart {
+                x: prev_x,
+                y: prev_y,
+            });
+
+            self.state.move_apple();
+        }
     }
 
     fn draw(&mut self) {
@@ -84,14 +142,7 @@ impl App {
             let x = (i % WIDTH as usize) as i16;
             let y = (i / WIDTH as usize) as i16;
 
-            if is_snake(
-                x,
-                y,
-                self.state.snake_pos_x,
-                self.state.snake_pos_y,
-                self.state.snake_length,
-                &self.state.snake_direction,
-            ) {
+            if is_in_snake(x, y, &self.state.snake) {
                 pixel.copy_from_slice(&SNAKE_COLOR);
             } else if is_in_area(x, y, self.state.apple_pos_x, self.state.apple_pos_y) {
                 pixel.copy_from_slice(&APPLE_COLOR);
@@ -110,22 +161,9 @@ const SNAKE_COLOR: [u8; 4] = [0x20, 0x80, 0x20, 0xFF];
 const APPLE_COLOR: [u8; 4] = [0x80, 0x20, 0x20, 0xFF];
 const BG_COLOR: [u8; 4] = [0x20, 0x20, 0x80, 0xFF];
 
-fn is_snake(
-    x: i16,
-    y: i16,
-    snake_x: i16,
-    snake_y: i16,
-    snake_length: i16,
-    snake_direction: &Direction,
-) -> bool {
-    for i in 0..snake_length {
-        let (snake_x, snake_y) = match snake_direction {
-            Direction::Up => (snake_x, snake_y - (BLOCK_SIZE * i)),
-            Direction::Down => (snake_x, snake_y + (BLOCK_SIZE * i)),
-            Direction::Right => (snake_x + (BLOCK_SIZE * i), snake_y),
-            Direction::Left => (snake_x - (BLOCK_SIZE * i), snake_y),
-        };
-        if is_in_area(x, y, snake_x, snake_y) {
+fn is_in_snake(x: i16, y: i16, snake: &Snake) -> bool {
+    for part in &snake.parts {
+        if is_in_area(x, y, part.x, part.y) {
             return true;
         }
     }
@@ -166,6 +204,8 @@ impl ApplicationHandler for App {
         self.pixels = Some(pixels);
         self.window = Some(window);
 
+        self.state.move_apple();
+
         self.next_frame_time = Instant::now();
 
         event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame_time));
@@ -181,30 +221,25 @@ impl ApplicationHandler for App {
             winit::event::WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
-            winit::event::WindowEvent::KeyboardInput {
-                device_id,
-                event,
-                is_synthetic,
-            } if !event.repeat => {
+            winit::event::WindowEvent::KeyboardInput { event, .. } if !event.repeat => {
                 match event.physical_key {
                     winit::keyboard::PhysicalKey::Code(key_code) => match key_code {
                         winit::keyboard::KeyCode::ArrowLeft => {
-                            self.state.snake_direction = Direction::Left
+                            self.state.snake.direction = Direction::Left;
                         }
                         winit::keyboard::KeyCode::ArrowRight => {
-                            self.state.snake_direction = Direction::Right
+                            self.state.snake.direction = Direction::Right;
                         }
                         winit::keyboard::KeyCode::ArrowUp => {
-                            self.state.snake_direction = Direction::Up
+                            self.state.snake.direction = Direction::Up;
                         }
                         winit::keyboard::KeyCode::ArrowDown => {
-                            self.state.snake_direction = Direction::Down
+                            self.state.snake.direction = Direction::Down;
                         }
                         _ => {}
                     },
                     _ => {}
                 }
-                println!("{:?} {:?} {:?}", device_id, event, is_synthetic)
             }
             _ => {}
         }
