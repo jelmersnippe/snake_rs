@@ -134,11 +134,25 @@ impl App {
             Direction::Left => (-BLOCK_SIZE, 0),
         };
 
-        let mut prev_x = self.state.snake.parts[0].x;
-        let mut prev_y = self.state.snake.parts[0].y;
+        let head = &mut self.state.snake.parts[0];
+        let mut prev_x = head.x;
+        let mut prev_y = head.y;
 
-        self.state.snake.parts[0].x += velocity_x;
-        self.state.snake.parts[0].y += velocity_y;
+        head.x += velocity_x;
+        head.y += velocity_y;
+
+        if head.x < 0 {
+            head.x = WIDTH - BLOCK_SIZE;
+        }
+        if head.y < 0 {
+            head.y = HEIGHT - BLOCK_SIZE;
+        }
+        if head.x >= WIDTH {
+            head.x = 0;
+        }
+        if head.y >= HEIGHT {
+            head.y = 0;
+        }
 
         for i in 1..self.state.snake.parts.len() {
             let x = self.state.snake.parts[i].x;
