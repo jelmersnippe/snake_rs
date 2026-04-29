@@ -13,7 +13,7 @@ use winit::{
     window::Window,
 };
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum Direction {
     Up,
     Right,
@@ -44,10 +44,18 @@ impl Snake {
     }
 }
 
+#[derive(PartialEq)]
+enum GameMode {
+    GameOver,
+    Running,
+}
+
 struct GameState {
     snake: Snake,
     apple_pos_x: i16,
     apple_pos_y: i16,
+    mode: GameMode,
+    requested_direction: Option<Direction>,
 }
 
 impl GameState {
@@ -57,7 +65,7 @@ impl GameState {
         self.apple_pos_x = rng.random_range(0..20) * BLOCK_SIZE;
         self.apple_pos_y = rng.random_range(0..20) * BLOCK_SIZE;
 
-        if is_in_snake(self.apple_pos_x, self.apple_pos_y, &self.snake) {
+        if is_in_snake(self.apple_pos_x, self.apple_pos_y, &self.snake.parts) {
             self.move_apple();
         }
     }
@@ -70,6 +78,8 @@ impl Default for GameState {
             snake: Snake::new(),
             apple_pos_x: rng.random_range(0..20) * BLOCK_SIZE,
             apple_pos_y: rng.random_range(0..20) * BLOCK_SIZE,
+            mode: GameMode::Running,
+            requested_direction: None,
         }
     }
 }
@@ -94,8 +104,29 @@ impl Default for App {
     }
 }
 
+fn hits_self(snake: &Snake) -> bool {
+    let head = &snake.parts[0];
+
+    for part in snake.parts.iter().skip(1) {
+        if part.x == head.x && part.y == head.y {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 impl App {
     fn update(&mut self) {
+        if self.state.mode == GameMode::GameOver {
+            return;
+        }
+
+        if let Some(direction) = self.state.requested_direction {
+            self.state.snake.direction = direction;
+            self.state.requested_direction = None;
+        }
+
         let (velocity_x, velocity_y) = match self.state.snake.direction {
             Direction::Up => (0, -BLOCK_SIZE),
             Direction::Down => (0, BLOCK_SIZE),
@@ -123,7 +154,7 @@ impl App {
         if is_in_snake(
             self.state.apple_pos_x,
             self.state.apple_pos_y,
-            &self.state.snake,
+            &self.state.snake.parts,
         ) {
             self.state.snake.parts.push(SnakePart {
                 x: prev_x,
@@ -131,6 +162,10 @@ impl App {
             });
 
             self.state.move_apple();
+        }
+
+        if hits_self(&self.state.snake) {
+            self.state.mode = GameMode::GameOver
         }
     }
 
@@ -140,10 +175,14 @@ impl App {
 
         // Fill screen with a color (RGBA)
         for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+            if self.state.mode == GameMode::GameOver {
+                pixel.copy_from_slice(&GAME_OVER_COLOR);
+                continue;
+            }
             let x = (i % WIDTH as usize) as i16;
             let y = (i / WIDTH as usize) as i16;
 
-            if is_in_snake(x, y, &self.state.snake) {
+            if is_in_snake(x, y, &self.state.snake.parts) {
                 pixel.copy_from_slice(&SNAKE_COLOR);
             } else if is_in_area(x, y, self.state.apple_pos_x, self.state.apple_pos_y) {
                 pixel.copy_from_slice(&APPLE_COLOR);
@@ -151,6 +190,7 @@ impl App {
                 pixel.copy_from_slice(&BG_COLOR);
             }
         }
+
         pixels.render().unwrap();
     }
 }
@@ -161,9 +201,10 @@ const BLOCK_SIZE: i16 = 20;
 const SNAKE_COLOR: [u8; 4] = [0x20, 0x80, 0x20, 0xFF];
 const APPLE_COLOR: [u8; 4] = [0x80, 0x20, 0x20, 0xFF];
 const BG_COLOR: [u8; 4] = [0x20, 0x20, 0x80, 0xFF];
+const GAME_OVER_COLOR: [u8; 4] = [0x00, 0x00, 0x00, 0xFF];
 
-fn is_in_snake(x: i16, y: i16, snake: &Snake) -> bool {
-    for part in &snake.parts {
+fn is_in_snake(x: i16, y: i16, parts: &Vec<SnakePart>) -> bool {
+    for part in parts {
         if is_in_area(x, y, part.x, part.y) {
             return true;
         }
@@ -229,25 +270,25 @@ impl ApplicationHandler for App {
                             if self.state.snake.direction != Direction::Right
                                 && self.state.snake.direction != Direction::Left =>
                         {
-                            self.state.snake.direction = Direction::Left;
+                            self.state.requested_direction = Some(Direction::Left);
                         }
                         winit::keyboard::KeyCode::ArrowRight
                             if self.state.snake.direction != Direction::Right
                                 && self.state.snake.direction != Direction::Left =>
                         {
-                            self.state.snake.direction = Direction::Right;
+                            self.state.requested_direction = Some(Direction::Right);
                         }
                         winit::keyboard::KeyCode::ArrowUp
                             if self.state.snake.direction != Direction::Up
                                 && self.state.snake.direction != Direction::Down =>
                         {
-                            self.state.snake.direction = Direction::Up;
+                            self.state.requested_direction = Some(Direction::Up);
                         }
                         winit::keyboard::KeyCode::ArrowDown
                             if self.state.snake.direction != Direction::Up
                                 && self.state.snake.direction != Direction::Down =>
                         {
-                            self.state.snake.direction = Direction::Down;
+                            self.state.requested_direction = Some(Direction::Down);
                         }
                         _ => {}
                     },
