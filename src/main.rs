@@ -13,6 +13,7 @@ use winit::{
     window::Window,
 };
 
+#[derive(PartialEq)]
 enum Direction {
     Up,
     Right,
@@ -73,7 +74,7 @@ impl Default for GameState {
     }
 }
 
-const FPS: u64 = 2;
+const FPS: u64 = 4;
 
 struct App {
     window: Option<Arc<Window>>,
@@ -224,16 +225,28 @@ impl ApplicationHandler for App {
             winit::event::WindowEvent::KeyboardInput { event, .. } if !event.repeat => {
                 match event.physical_key {
                     winit::keyboard::PhysicalKey::Code(key_code) => match key_code {
-                        winit::keyboard::KeyCode::ArrowLeft => {
+                        winit::keyboard::KeyCode::ArrowLeft
+                            if self.state.snake.direction != Direction::Right
+                                && self.state.snake.direction != Direction::Left =>
+                        {
                             self.state.snake.direction = Direction::Left;
                         }
-                        winit::keyboard::KeyCode::ArrowRight => {
+                        winit::keyboard::KeyCode::ArrowRight
+                            if self.state.snake.direction != Direction::Right
+                                && self.state.snake.direction != Direction::Left =>
+                        {
                             self.state.snake.direction = Direction::Right;
                         }
-                        winit::keyboard::KeyCode::ArrowUp => {
+                        winit::keyboard::KeyCode::ArrowUp
+                            if self.state.snake.direction != Direction::Up
+                                && self.state.snake.direction != Direction::Down =>
+                        {
                             self.state.snake.direction = Direction::Up;
                         }
-                        winit::keyboard::KeyCode::ArrowDown => {
+                        winit::keyboard::KeyCode::ArrowDown
+                            if self.state.snake.direction != Direction::Up
+                                && self.state.snake.direction != Direction::Down =>
+                        {
                             self.state.snake.direction = Direction::Down;
                         }
                         _ => {}
